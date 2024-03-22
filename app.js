@@ -4,8 +4,10 @@ const mongoose=require('mongoose');
 const ejs=require('ejs');
 const bcrypt=require('bcrypt');
 const session=require("express-session");
-const passport=require("passport");
+const passport=require("passport");  
 const passportLocalMongoose=require("passport-local-mongoose");
+const GoogleStrategy = require('passport-google-oauth20');
+const findOrCreate=require('mongoose-findorcreate')
 require("dotenv").config();
 // const encrypt=require("mongoose-encryption")
 // const md5=require("md5");
@@ -38,20 +40,54 @@ const userSchema = mongoose.Schema({
 });
 // const secret =process.env.SECRET;
 // userSchema.plugin(encrypt,{secret:secret,encrytedFields:["password"]});
-app.use(passport.initialize());
-app.use(passport.session());
-userSchema.plugin(passportLocalMongoose);
-const User =new mongoose.model("user",userSchema)
+app.use(passport.initialize());//says the express to use passporrt
+app.use(passport.session());//says the express that the passport will take care of the session
 
-passport.use(User.createStrategy());
+userSchema.plugin(passportLocalMongoose);//using the local mongoose plugin it will automatically hashes the password
+userSchema.plugin(findOrCreate);//using the local mongoose plugin it will automatically
+const User =new mongoose.model("user",userSchema) //creating a new collection called user and this collection uses userSchema to create a document
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.use(User.createStrategy());// says to passport to use local startegy when means authenticaiton is done in local db which perdominantly using username and password as default i think!
+//or saying to passport to create stargegy like passport js is the guard who checks the attentands passport.use means tell guard use then passport.use(User.createStrategy) means use User model which has
+//username and password for authentication purposes and createStrategy means use this stargety from user model username and password for authenticating the attendants 
+
+passport.serializeUser(User.serializeUser());//telling guard (passport) to when attentant enter the building with correct username and password it creates a session and extracts the user id thats is the attentants id and store it in the session
+//and store session id in the cookie and send to browser to store it in the cookie
+passport.deserializeUser(User.deserializeUser());//when the attentant again enter the building it checks the session  like stored cookie in the browser sendts to the server using get request and deserilize the session
+//with session id and extracts the user id in the session if the id is present in the db it allows the user to access the webapp
+
+////////////////////////////////////////////
 
 
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECERT,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    scope: ["profile"]
+  },
+  
+   function(accessToken,refreshToken,profile,cb){
+    User.findOrCreate({googleId:profile.id},function(err,user){
+        return cb(err,user);
+    });
+   }
+));
+
+
+
+
+
+
+////////////////////////////////////////////////////////
 app.get('/', (req, res) => {
     res.render("home")
 });
+
+app.get('/auth/google', (req, res) => {
+    passport.authenticate('google',{scope:["profile"]})
+
+});
+
 app.get('/register', (req, res) => {
     res.render("register")
 });
@@ -61,11 +97,12 @@ app.get('/login', (req, res) => {
 app.get('/secrets', (req, res) => {
     if(req.isAuthenticated()) {
         res.render("secrets")
+        console.log(req.user)
     }
     else{
         res.redirect('/login')
     } 
-   
+   //
 });
 
 app.post('/register', (req, res) => {
@@ -98,13 +135,14 @@ const newUser = new User({
     username: req.body.username,
     password: req.body.password,
 })
+
 req.login(newUser,function(err){
     if(err){
      
         res.redirect("/login");
 }
 else{
-    console.log("this from login req ans i think :"+req);
+   
     passport.authenticate("local")(req, res, function(){
         res.redirect("/secrets");
 
