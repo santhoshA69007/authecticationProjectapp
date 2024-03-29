@@ -28,7 +28,7 @@ const saltRounds=10;
 mongoose.connect("mongodb://localhost:27017/userDB");
 
 const userSchema = mongoose.Schema({
-    email: {
+    username: {
  
         type: String,
    
@@ -42,8 +42,13 @@ const userSchema = mongoose.Schema({
     ,
     googleId:{
         type: String,
+    },
+    secrets:{
+        type: String,
     }
+
 });
+
 // const secret =process.env.SECRET;
 // userSchema.plugin(encrypt,{secret:secret,encrytedFields:["password"]});
 app.use(passport.initialize());//says the express to use passporrt
@@ -125,20 +130,30 @@ app.get('/', (req, res) => {
     res.render("home")
 });
 
+app.get('/submit',(req, res) => {
+    if(req.isAuthenticated()){
+        res.render("submit")
+    }
+    else{
+        res.redirect("/login")
+    }
+    
 
-
+   
+});
 app.get('/register', (req, res) => {
     res.render("register")
 });
 app.get('/login', (req, res) => {
     res.render("login")
 });
-app.get('/secrets',(req, res) => {
+app.get('/secrets',async(req, res) => {
     if(req.isAuthenticated()){
-        res.render("secrets")
+        const userSecrets=await User.find({secrets:{$ne:null}})
+        res.render("secrets",{user:userSecrets})
     }
     else{
-        res.redirect("/login")
+     res.redirect("/login")
     }
     
 
@@ -202,6 +217,17 @@ else{
 }
 });
 });
+
+app.post('/submit', async(req, res) => {
+   const newSecret=await User.findById(req.user.id);
+   newSecret.secrets=req.body.secret;
+   newSecret.save();
+    console.log(newSecret)
+    res.redirect("/secrets");
+    });
+    
+
+
 
 
 app.get("/logout",(req, res) => {
