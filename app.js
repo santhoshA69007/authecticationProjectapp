@@ -6,9 +6,11 @@ const bcrypt=require('bcrypt');
 const session=require("express-session");
 const passport=require("passport");  
 const passportLocalMongoose=require("passport-local-mongoose");
-const GoogleStrategy = require('passport-google-oauth20');
-const findOrCreate=require('mongoose-findorcreate')
 require("dotenv").config();
+const findOrCreate = require("mongoose-findorcreate");
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const twitterStrategy = require('passport-twitter').Strategy;
+
 // const encrypt=require("mongoose-encryption")
 // const md5=require("md5");
 
@@ -18,7 +20,7 @@ const app=express();
 app.set('view engine', "ejs");
 app.use(express.urlencoded());
 app.use(session({
-    secret:"i like my briyani especially with chicken 65!",
+    secret:process.env.SECRET,
     resave: false,
     saveUninitialized:false,
 }));
@@ -37,24 +39,45 @@ const userSchema = mongoose.Schema({
         type: String,
     
     }
+    ,
+    googleId:{
+        type: String,
+    }
 });
 // const secret =process.env.SECRET;
 // userSchema.plugin(encrypt,{secret:secret,encrytedFields:["password"]});
 app.use(passport.initialize());//says the express to use passporrt
 app.use(passport.session());//says the express that the passport will take care of the session
 
-userSchema.plugin(passportLocalMongoose);//using the local mongoose plugin it will automatically hashes the password
+userSchema.plugin(passportLocalMongoose);//using the local mongoose plugin it will automatically hashes the password and also provides lots of methods to Userr model
 userSchema.plugin(findOrCreate);//using the local mongoose plugin it will automatically
 const User =new mongoose.model("user",userSchema) //creating a new collection called user and this collection uses userSchema to create a document
 
 passport.use(User.createStrategy());// says to passport to use local startegy when means authenticaiton is done in local db which perdominantly using username and password as default i think!
 //or saying to passport to create stargegy like passport js is the guard who checks the attentands passport.use means tell guard use then passport.use(User.createStrategy) means use User model which has
 //username and password for authentication purposes and createStrategy means use this stargety from user model username and password for authenticating the attendants 
+    
 
-passport.serializeUser(User.serializeUser());//telling guard (passport) to when attentant enter the building with correct username and password it creates a session and extracts the user id thats is the attentants id and store it in the session
+//telling guard (passport) to when attentant enter the building with correct username and password it creates a session and extracts the user id thats is the attentants id and store it in the session
 //and store session id in the cookie and send to browser to store it in the cookie
-passport.deserializeUser(User.deserializeUser());//when the attentant again enter the building it checks the session  like stored cookie in the browser sendts to the server using get request and deserilize the session
+passport.serializeUser(function(user,done){
+done(null,user.id);
+}
+);
+passport.deserializeUser(function(id,done){
+    User.findById(id)
+    .then(user => {
+        done(null, user);
+    })
+    .catch(err => {
+        done(err, null);
+    });
+});
+
+
+//when the attentant again enter the building it checks the session  like stored cookie in the browser sendts to the server using get request and deserilize the session
 //with session id and extracts the user id in the session if the id is present in the db it allows the user to access the webapp
+
 
 ////////////////////////////////////////////
 
@@ -63,10 +86,12 @@ passport.use(new GoogleStrategy({
     clientID: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECERT,
     callbackURL: "http://localhost:3000/auth/google/secrets",
-    scope: ["profile"]
+    scope: ["profile"],
+    userProfileURL:"https://www.googleapis.com/oauth2/v3/userinfo"
   },
   
    function(accessToken,refreshToken,profile,cb){
+    console.log(profile);
     User.findOrCreate({googleId:profile.id},function(err,user){
         return cb(err,user);
     });
@@ -75,18 +100,32 @@ passport.use(new GoogleStrategy({
 
 
 
+////////////////////////////////////////////////////////
 
 
 
 ////////////////////////////////////////////////////////
+
+passport.use(new twitterStrategy({
+    consumerKey: process.env.TWITTER_API_KEY,
+    consumerSecret: process.env.TWITTER_API_SECRET,
+    callbackURL: '"http://localhost:3000/auth/twitter/secrets"'
+  },
+  function(token, tokenSecret, profile, done) {
+
+    console.log(profile);
+    User.findOrCreate({googleId:profile.id},function(err,user){
+        return cb(err,user);
+    });
+   }
+));
+//////////////////////////////////////////////////////////
+
 app.get('/', (req, res) => {
     res.render("home")
 });
 
-app.get('/auth/google', (req, res) => {
-    passport.authenticate('google',{scope:["profile"]})
 
-});
 
 app.get('/register', (req, res) => {
     res.render("register")
@@ -94,15 +133,28 @@ app.get('/register', (req, res) => {
 app.get('/login', (req, res) => {
     res.render("login")
 });
-app.get('/secrets', (req, res) => {
-    if(req.isAuthenticated()) {
+app.get('/secrets',(req, res) => {
+    if(req.isAuthenticated()){
         res.render("secrets")
-        console.log(req.user)
     }
     else{
-        res.redirect('/login')
-    } 
-   //
+        res.redirect("/login")
+    }
+    
+
+   
+});
+app.get('/auth/google',(req,res) => passport.authenticate('google', { scope: ["profile"] })(req,res)
+   )
+   app.get('/auth/twitter',(req,res) => passport.authenticate('twitter', { scope: ["profile"] })(req,res)
+   )
+   app.get('/auth/twitter/secrets', passport.authenticate('google', { failureRedirect: '/login' }), (req, res) => {
+    
+    res.redirect('/secrets');
+});
+app.get('/auth/google/secrets', passport.authenticate('google', { failureRedirect: '/login' }), (req, res) => {
+    
+    res.redirect('/secrets');
 });
 
 app.post('/register', (req, res) => {
